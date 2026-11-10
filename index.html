@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Угадай число</title>
+    <style>
+        :root {
+            --bg: #0a0e1a;
+            --panel: #131a2e;
+            --panel2: #1f2a4a;
+            --text: #e8ecf6;
+            --muted: #7f8bab;
+            --green: #4ade80;
+            --cyan: #22d3ee;
+            --pink: #e879f9;
+            --red: #fb7185;
+            --gold: #fbbf24;
+            --font: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: var(--font);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            width: 556px;
+            background: var(--bg);
+            padding: 20px;
+            box-sizing: border-box;
+            text-align: center;
+            position: relative;
+        }
+        h1 { font-size: 34px; margin-bottom: 4px; }
+        .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 20px; }
+        
+        .card {
+            background: var(--panel);
+            display: flex;
+            margin-bottom: 10px;
+            cursor: pointer;
+            text-align: left;
+            border-radius: 4px;
+            overflow: hidden;
+            transition: background 0.2s;
+        }
+        .card:hover { background: var(--panel2); }
+        .card-bar { width: 6px; }
+        .card-body { padding: 14px 16px; flex-grow: 1; }
+        .card-title { font-size: 16px; font-weight: bold; }
+        .card-desc { font-size: 11px; color: var(--muted); margin-top: 4px; }
+        .card-right { font-size: 18px; font-weight: bold; display: flex; align-items: center; padding-right: 18px; }
+
+        .btn {
+            background: var(--cyan);
+            color: var(--bg);
+            font-weight: bold;
+            font-size: 15px;
+            padding: 12px;
+            border: none;
+            width: 100%;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-top: 12px;
+            transition: opacity 0.2s;
+        }
+        .btn:hover { opacity: 0.85; }
+
+        input {
+            background: var(--panel);
+            color: var(--text);
+            font-size: 30px;
+            font-weight: bold;
+            text-align: center;
+            border: 2px solid var(--panel2);
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            outline: none;
+            border-radius: 4px;
+        }
+        input:focus { border-color: var(--cyan); }
+
+        .history-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 6px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .history-item {
+            background: var(--panel);
+            padding: 8px;
+            font-weight: bold;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        
+        .modal {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--panel);
+            border: 2px solid var(--green);
+            padding: 32px 44px;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: none;
+        }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-8px); }
+            40%, 80% { transform: translateX(8px); }
+        }
+        .shake { animation: shake 0.3s; }
+    </style>
+</head>
+<body>
+
+<div class="container" id="app">
+    <!-- Динамический контент загружается через JS -->
+</div>
+
+<script>
+    const ATTEMPTS = 10;
+    const MODES = [
+        { name: "ЛЁГКИЙ", top: 10, color: "#4ade80", desc: "Разминка", mult: 1 },
+        { name: "НОРМАЛЬНЫЙ", top: 50, color: "#22d3ee", desc: "Для уверенных", mult: 2 },
+        { name: "СЛОЖНЫЙ", top: 100, color: "#e879f9", desc: "Нужна стратегия", mult: 3 },
+        { name: "ХАРДКОР", top: 1000, color: "#fb7185", desc: "Только деление пополам", mult: 5 },
+    ];
+
+    let state = {
+        screen: 'menu',
+        wins: 0,
+        losses: 0,
+        best: {},
+        mode: null,
+        number: 0,
+        left: ATTEMPTS,
+        low: 1,
+        high: 100,
+        history: [],
+        over: false,
+        msg: "Сделай первую попытку",
+        msgColor: "#7f8bab"
+    };
+
+    function render() {
+        const app = document.getElementById('app');
+        app.innerHTML = '';
+
+        if (state.screen === 'menu') {
+            app.innerHTML = `
+                <h1>УГАДАЙ ЧИСЛО</h1>
+                <div class="subtitle">У тебя ${ATTEMPTS} попыток. Выбери режим.</div>
+                <div id="modes-list"></div>
+                <div class="subtitle" style="margin-top: 20px;">Победы: ${state.wins}     Поражения: ${state.losses}</div>
+            `;
+            const list = document.getElementById('modes-list');
+            MODES.forEach(m => {
+                let desc = m.desc;
+                if (state.best[m.name]) desc += `  |  рекорд ${state.best[m.name]}`;
+                list.innerHTML += `
+                    <div class="card" onclick="startGame('${m.name}')">
+                        <div class="card-bar" style="background: ${m.color};"></div>
+                        <div class="card-body">
+                            <div class="card-title" style="color: ${m.color};">${m.name}</div>
+                            <div class="card-desc">${desc}</div>
+                        </div>
+                        <div class="card-right">1 – ${m.top}</div>
+                    </div>
+                `;
+            });
+        } else if (state.screen === 'game') {
+            app.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <span style="color: var(--muted); cursor: pointer;" onclick="state.screen='menu'; render();">← Режимы</span>
+                    <span style="font-weight: bold; color: ${state.mode.color};">${state.mode.name}</span>
+                </div>
+                <h1>Число от 1 до ${state.mode.top}</h1>
+                <div id="msg" class="subtitle" style="color: ${state.msgColor};">${state.msg}</div>
+                
+                <canvas id="rangeCanvas" width="520" height="60" style="background: var(--bg);"></canvas>
+                <canvas id="livesCanvas" width="520" height="30" style="background: var(--bg); margin: 5px 0;"></canvas>
+                <div class="subtitle" id="leftLbl">Осталось попыток: ${state.left}</div>
+
+                <div id="boxContainer" style="margin-top: 15px;">
+                    <input type="number" id="guessInput" autofocus onkeydown="if(event.key==='Enter') makeGuess()">
+                    <button class="btn" style="background: ${state.mode.color}; color: var(--bg);" onclick="makeGuess()">УГАДАТЬ</button>
+                </div>
+
+                <div class="history-grid" id="historyGrid"></div>
+
+                <div id="modal" class="modal">
+                    <h1 id="modalHead"></h1>
+                    <div id="modalLine" class="subtitle" style="margin: 10px 0;"></div>
+                    <div id="modalExtra" class="subtitle" style="margin-bottom: 20px;"></div>
+                    <button class="btn" style="background: ${state.mode.color}; color: var(--bg);" onclick="startGame('${state.mode.name}')">ИГРАТЬ СНОВА</button>
+                    <button class="btn" style="background: var(--panel2); color: var(--text); margin-top: 8px;" onclick="state.screen='menu'; render();">РЕЖИМЫ</button>
+                </div>
+            `;
+            drawRange();
+            drawLives();
+            renderHistory();
+            if (state.over) {
+                document.getElementById('modal').style.display = 'block';
+                document.getElementById('guessInput').disabled = true;
+            }
+        }
+    }
+
+    function startGame(modeName) {
+        state.mode = MODES.find(m => m.name === modeName);
+        state.number = Math.floor(Math.random() * state.mode.top) + 1;
+        state.left = ATTEMPTS;
+        state.low = 1;
+        state.high = state.mode.top;
+        state.history = [];
+        state.over = false;
+        state.screen = 'game';
+        state.msg = "Сделай первую попытку";
+        state.msgColor = "#7f8bab";
+        render();
+    }
+
+    function makeGuess() {
+        if (state.over) return;
+        const input = document.getElementById('guessInput');
+        const val = parseInt(input.value);
+        
+        if (isNaN(val)) return showMsg("Введи целое число", "var(--red)", true);
+        if (val < 1 || val > state.mode.top) return showMsg(`Число должно быть от 1 до ${state.mode.top}`, "var(--red)", true);
+        if (state.history.some(h => h.g === val)) return showMsg("Это число уже было", "var(--gold)", true);
+
+        input.value = "";
+        state.left--;
+
+        if (val === state.number) {
+            state.history.push({g: val, res: "="});
+            endGame(true);
+            return;
+        }
+
+        const dist = Math.abs(val - state.number) / state.mode.top;
+        const heat = dist <= 0.05 ? "Горячо" : (dist <= 0.15 ? "Тепло" : "Холодно");
+
+        if (val < state.number) {
+            state.low = Math.max(state.low, val + 1);
+            state.history.push({g: val, res: "↑"});
+            showMsg(`Больше ↑   •   ${heat}`, "var(--cyan)", true);
+        } else {
+            state.high = Math.min(state.high, val - 1);
+            state.history.push({g: val, res: "↓"});
+            showMsg(`Меньше ↓   •   ${heat}`, "var(--pink)", true);
+        }
+
+        if (state.left === 0) {
+            endGame(false);
+        } else {
+            render();
+            document.getElementById('guessInput').focus();
+        }
+    }
+
+    function showMsg(text, color, shake) {
+        state.msg = text;
+        state.msgColor = color;
+        const msgEl = document.getElementById('msg');
+        if(msgEl) {
+            msgEl.innerText = text;
+            msgEl.style.color = color;
+        }
+        if (shake) {
+            const box = document.getElementById('boxContainer');
+            box.classList.add('shake');
+            setTimeout(() => box.classList.remove('shake'), 300);
+        }
+    }
+
+    function drawRange() {
+        const canvas = document.getElementById('rangeCanvas');
+        if(!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width, H = canvas.height;
+        const pad = 24, y = 35, span = W - 2 * pad;
+        const px = v => pad + (v - 1) / (state.mode.top - 1) * span;
+
+        ctx.clearRect(0,0,W,H);
+        // Линия фона
+        ctx.strokeStyle = "#1f2a4a"; ctx.lineWidth = 10; ctx.lineCap = "round";
+        ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - pad, y); ctx.stroke();
+        // Линия диапазона
+        ctx.strokeStyle = state.mode.color;
+        ctx.beginPath(); ctx.moveTo(px(state.low), y); ctx.lineTo(px(state.high), y); ctx.stroke();
+        // Кружки границ
+        [state.low, state.high].forEach(v => {
+            ctx.fillStyle = "#e8ecf6"; ctx.strokeStyle = state.mode.color; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(px(v), y, 9, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        });
+        // Текст
+        ctx.fillStyle = "#7f8bab"; ctx.font = "11px Segoe UI";
+        ctx.fillText("1", pad, 15);
+        ctx.textAlign = "right"; ctx.fillText(state.mode.top, W - pad, 15);
+        ctx.textAlign = "center"; ctx.fillStyle = "#e8ecf6"; ctx.font = "bold 12px Segoe UI";
+        ctx.fillText(`Сейчас: ${state.low} – ${state.high}`, W/2, 15);
+    }
+
+    function drawLives() {
+        const canvas = document.getElementById('livesCanvas');
+        if(!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width, H = canvas.height;
+        ctx.clearRect(0,0,W,H);
+        
+        const x0 = (W - ATTEMPTS * 40) / 2 + 20;
+        for(let i=0; i<ATTEMPTS; i++) {
+            let on = i < state.left;
+            ctx.fillStyle = on ? state.mode.color : "#131a2e";
+            ctx.strokeStyle = on ? state.mode.color : "#1f2a4a";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(x0 + i * 40, 15, 12, 0, Math.PI*2);
+            ctx.fill(); ctx.stroke();
+        }
+    }
+
+    function renderHistory() {
+        const grid = document.getElementById('historyGrid');
+        if(!grid) return;
+        state.history.forEach(item => {
+            let col = item.res === "↑" ? "var(--cyan)" : (item.res === "↓" ? "var(--pink)" : "var(--green)");
+            grid.innerHTML += `<div class="history-item" style="color: ${col};">${item.g} ${item.res}</div>`;
+        });
+    }
+
+    function endGame(won) {
+        state.over = true;
+        render();
+        const modal = document.getElementById('modal');
+        const head = document.getElementById('modalHead');
+        const line = document.getElementById('modalLine');
+        const extra = document.getElementById('modalExtra');
+
+        modal.style.display = 'block';
+        if (won) {
+            let score = (state.left + 1) * 100 * state.mode.mult;
+            state.best[state.mode.name] = Math.max(state.best[state.mode.name] || 0, score);
+            head.innerText = "ПОБЕДА";
+            head.style.color = "var(--green)";
+            line.innerText = `Число ${state.number} угадано за ${ATTEMPTS - state.left} из ${ATTEMPTS}`;
+            extra.innerText = `Очки: ${score}     Рекорд: ${state.best[state.mode.name]}`;
+        } else {
+            head.innerText = "ПОРАЖЕНИЕ";
+            head.style.color = "var(--red)";
+            line.innerText = `Загадано было число ${state.number}`;
+            extra.innerText = "Попытки закончились";
+        }
+    }
+
+    render();
+</script>
+</body>
+</html>
